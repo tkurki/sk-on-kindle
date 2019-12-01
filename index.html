@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>.</title>
+    <script src="jquery.min.js"></script>
+    <link
+      rel="stylesheet"
+      type="text/css"
+      media="all"
+      href="iKommunicate-Kindle.css"
+    />
+
+    <script>
+      //217.137.78.199:3000
+      var fontSize;
+      $(document).ready(function() {
+        zoomX = 1;
+        zoomY = 1;
+        screenWidth = screen.width;
+        if (screenWidth > 1280) zoomX = screen.width / 1280;
+        screenHeight = screen.height;
+        if (screenHeight > 768) zoomY = screen.height / 768;
+
+        fontSize = parseInt($("body").css("font-size"), 10);
+        if (zoomX > 1) {
+          if (zoomX > zoomY) fontSize *= zoomX;
+          else if (zoomY > 1) fontSize *= zoomY;
+        }
+        $("body").css("font-size", fontSize + "px");
+      });
+      var NUMBER_VARIABLES = 4;
+      var LABEL_VARIABLES = [
+        ["Depth (K)", "Depth (T)", "Depth (S)"],
+        ["Speed", "SOG"],
+        ["Heading (M)", "Heading (T)", "COG"],
+        ["Wind (App)", "Wind (True)"],
+      ];
+      var LABEL_UNITS = [
+        ["Meters", "Meters", "Meters", "Feet", "Feet", "Feet"],
+        ["Knots", "Knots"],
+        ["Degrees", "Degrees", "Degrees"],
+        ["Knots", "Knots", "M/S", "M/S"],
+      ];
+      var KEYS_4BOXES = [
+        ["belowKeel", "belowTransducer", "belowSurface"],
+        ["speedThroughWater", "speedOverGround"],
+        ["headingMagnetic", "headingTrue", "courseOverGround"],
+        ["angleApparent", "angleTrue"],
+        ["speedApparent", "speedTrue"],
+      ];
+
+      var positionPriority = [-1, -1, -1, -1, -1];
+
+      var ipServer;
+      var flagStreamClosed = false;
+      var displayMode = 0,
+        speedUnitsMode = 0,
+        depthUnitsMode = 0;
+      var currentBoxes = 0;
+      var guiDrawed = false;
+      var currentPath, currentPath2, currentPath3;
+      var variableNumber = 0;
+      var interval = 1000;
+      var flagFirstBox = true,
+        flagWindAngle = true;
+      var i;
+
+      // Start the request of data to the server
+      function startRequestDataServer() {
+        var urlServer;
+        var jsonParsed;
+        var value, value2, value3, value4;
+        if (
+          ipServer.length == 0 ||
+          ipServer == "192.168.1.64" ||
+          ipServer == "192.168.30.221" ||
+          ipServer == "192.168.30.219"
+        )
+          urlServer = "/signalk/v1/api/vessels/self/";
+        else urlServer = "http://" + ipServer + "/signalk/v1/api/vessels/self/";
+
+        setInterval(function() {
+          // If the user close the stream (flagStreamClosed==true), do anything
+          if (flagStreamClosed) return;
+          if (!guiDrawed) drawGUI();
+
+          var xhttp = new XMLHttpRequest();
+          if (positionPriority[0] == -1) {
+            xhttp.open("GET", urlServer, true);
+          } else {
+            switch (currentBoxes) {
+              case 0: // Depth
+              case 1: // Speed
+              case 2: // Course (Heading)
+              case 3: // Wind
+                xhttp.open("GET", urlServer + currentPath + "/", true);
+                break;
+              case 4: // Depth and Speed
+              case 5: // Course (Heading) and Wind
+              case 6: // All
+                xhttp.open("GET", urlServer, true);
+                break;
+            }
+          }
+          xhttp.send();
+          // The next function is executed when the data arrives from the server
+          xhttp.onreadystatechange = function() {
+            if (xhttp.readyState == 4 && xhttp.status == 200) {
+              if (positionPriority[0] == -1) {
+                getPriorities(
+                  JSON.parse(xhttp.responseText.replace(/,"value":{}/g, ""))
+                );
+                getPath(currentBoxes);
+                return;
+              }
+              if (positionPriority[currentBoxes] != 9) {
+                switch (currentBoxes) {
+                  case 0: // Depth
+                  case 1: // Speed
+                  case 2: // Course (Heading)
+                    value = JSON.parse(
+                      xhttp.responseText.replace(/,"value":{}/g, "")
+                    ).value;
+                    if (depthUnitsMode == 1 && currentBoxes == 0)
+                      value *= 3.2808;
+                    else if (currentBoxes == 1) value *= 1.94384;
+                    else if (currentBoxes == 2) value *= 57.296;
+                    if (currentBoxes != 2) value = value.toFixed(1);
+                    else {
+                      value = Math.round(value);
+                      value = format3Digits(1, value);
+                    }
+                    displayValue(value, null, null, null, null);
+                    break;
+                  case 3:
+                    if (flagWindAngle) {
+                      value = JSON.parse(
+                        xhttp.responseText.replace(/,"value":{}/g, "")
+                      ).value;
+                      value *= 57.296;
+                      value = Math.round(value);
+                      value = format3Digits(2, value);
+                      xhttp.open("GET", urlServer + currentPath2 + "/", true);
+                      xhttp.send();
+                      flagWindAngle = false;
+                    } else {
+                      value2 = JSON.parse(
+                        xhttp.responseText.replace(/,"value":{}/g, "")
+                      ).value;
+                      if (speedUnitsMode == 0) value2 *= 1.94384;
+                      value2 = Math.round(value2);
+                      displayValue(value, value2, null, null, null);
+                      flagWindAngle = true;
+                    }
+                    break;
+                  case 4: // Depth and Speed
+                    jsonParsed = JSON.parse(
+                      xhttp.responseText.replace(/,"value":{}/g, "")
+                    );
+                    value =
+                      jsonParsed["environment"]["depth"][
+                        KEYS_4BOXES[0][positionPriority[0]]
+                      ].value;
+                    if (depthUnitsMode == 1) value *= 3.2808;
+                    value = value.toFixed(1);
+                    value2 =
+                      jsonParsed["navigation"][
+                        KEYS_4BOXES[1][positionPriority[1]]
+                      ].value;
+                    value2 *= 1.94384;
+                    value2 = value2.toFixed(1);
+                    displayValue(value, value2, null, null, null);
+                    break;
+                  case 5: // Course (Heading) and Wind
+                    jsonParsed = JSON.parse(
+                      xhttp.responseText.replace(/,"value":{}/g, "")
+                    );
+                    value1 =
+                      jsonParsed["navigation"][
+                        KEYS_4BOXES[2][positionPriority[2]]
+                      ].value;
+                    value1 *= 57.296;
+                    value1 = Math.round(value1);
+                    value1 = format3Digits(1, value1);
+                    value2 =
+                      jsonParsed["environment"]["wind"][
+                        KEYS_4BOXES[3][positionPriority[3]]
+                      ].value;
+                    value2 *= 57.296;
+                    value2 = Math.round(value2);
+                    value2 = format3Digits(2, value2);
+                    value3 =
+                      jsonParsed["environment"]["wind"][
+                        KEYS_4BOXES[4][positionPriority[4]]
+                      ].value;
+                    if (speedUnitsMode == 0) value3 *= 1.94384;
+                    value3 = Math.round(value3);
+                    displayValue(value, value2, value3, null, null);
+                    break;
+                  case 6: // All
+                    jsonParsed = JSON.parse(
+                      xhttp.responseText.replace(/,"value":{}/g, "")
+                    );
+                    value =
+                      jsonParsed["environment"]["depth"][
+                        KEYS_4BOXES[0][positionPriority[0]]
+                      ].value;
+                    if (depthUnitsMode == 1) value *= 3.2808;
+                    value = value.toFixed(1);
+                    value2 =
+                      jsonParsed["navigation"][
+                        KEYS_4BOXES[1][positionPriority[1]]
+                      ].value;
+                    value2 *= 1.94384;
+                    value2 = value2.toFixed(1);
+                    value3 =
+                      jsonParsed["navigation"][
+                        KEYS_4BOXES[2][positionPriority[2]]
+                      ].value;
+                    value3 *= 57.296;
+                    value3 = Math.round(value3);
+                    value3 = format3Digits(1, value3);
+                    value4 =
+                      jsonParsed["environment"]["wind"][
+                        KEYS_4BOXES[3][positionPriority[3]]
+                      ].value;
+                    value4 *= 57.296;
+                    value4 = Math.round(value4);
+                    value4 = format3Digits(2, value4);
+                    value5 =
+                      jsonParsed["environment"]["wind"][
+                        KEYS_4BOXES[4][positionPriority[4]]
+                      ].value;
+                    if (speedUnitsMode == 0) value5 *= 1.94384;
+                    value5 = Math.round(value5);
+                    displayValue(value, value2, value3, value4, value5);
+                    break;
+                }
+              } else {
+                document.getElementById("display11").innerHTML =
+                  "<Font Style='Font-Size:500%;'><B>" +
+                  LABEL_VARIABLES[currentBoxes][0] +
+                  "</B><BR><BR></Font>" +
+                  "<span Style='Font-Size:700%;'><B>Unavailable</span></B><BR><BR><BR><BR><BR><BR>" +
+                  "<Font Style='Font-Size:500%;'><B>" +
+                  LABEL_UNITS[currentBoxes][0] +
+                  "</B></Font>";
+              }
+            } else {
+            }
+          };
+        }, interval);
+      }
+
+      function drawGUI() {
+        switch (Number(displayMode)) {
+          case 0:
+            currentBoxes = 0;
+            break;
+          case 1:
+            document.getElementById("row1").style.height = "48%";
+            document.getElementById("row2").style.display = "table-row";
+            currentBoxes = 4;
+            break;
+          case 2:
+            document.getElementById("row1").style.height = "48%";
+            document.getElementById("row1").style.width = "50%";
+            document.getElementById("row2").style.display = "table-row";
+            document.getElementById("row2").style.width = "50%";
+            document.getElementById("col12").style.display = "table-cell";
+            document.getElementById("col22").style.display = "table-cell";
+            currentBoxes = 6;
+            break;
+        }
+        guiDrawed = true;
+      }
+
+      function getPath(answerHTTP) {
+        switch (currentBoxes) {
+          case 0: // Depth
+            switch (positionPriority[0]) {
+              case 0:
+                currentPath = "environment/depth/belowKeel";
+                break;
+              case 1:
+                currentPath = "environment/depth/belowTransducer";
+                break;
+              case 2:
+                currentPath = "environment/depth/belowSurface";
+                break;
+            }
+            break;
+          case 1: // Speed
+            switch (positionPriority[1]) {
+              case 0:
+                currentPath = "navigation/speedThroughWater";
+                break;
+              case 1:
+                currentPath = "navigation/speedOverGround";
+                break;
+            }
+            break;
+          case 2: // Course (Heading)
+            switch (positionPriority[2]) {
+              case 0:
+                currentPath = "navigation/headingMagnetic";
+                break;
+              case 1:
+                currentPath = "navigation/headingTrue";
+                break;
+              case 2:
+                currentPath = "navigation/courseOverGround";
+                break;
+            }
+            break;
+          case 3: // Wind
+            switch (positionPriority[3]) {
+              case 0:
+                currentPath = "environment/wind/angleApparent";
+                break;
+              case 1:
+                currentPath = "environment/wind/angleTrue";
+                break;
+            }
+            switch (positionPriority[4]) {
+              case 0:
+                currentPath2 = "environment/wind/speedApparent";
+                break;
+              case 1:
+                currentPath2 = "environment/wind/speedTrue";
+                break;
+            }
+            break;
+          case 4: // Depth and Speed
+            switch (positionPriority[0]) {
+              case 0:
+                currentPath = "environment/depth/belowKeel";
+                break;
+              case 1:
+                currentPath = "environment/depth/belowTransducer";
+                break;
+              case 2:
+                currentPath = "environment/depth/belowSurface";
+                break;
+            }
+            switch (positionPriority[1]) {
+              case 0:
+                currentPath2 = "navigation/speedThroughWater";
+                break;
+              case 1:
+                currentPath2 = "navigation/speedOverGround";
+                break;
+            }
+            break;
+          case 5: // Course (Heading) and Wind
+            switch (positionPriority[2]) {
+              case 0:
+                currentPath = "navigation/headingMagnetic";
+                break;
+              case 1:
+                currentPath = "navigation/headingTrue";
+                break;
+              case 2:
+                currentPath = "navigation/courseOverGround";
+                break;
+            }
+            switch (positionPriority[3]) {
+              case 0:
+                currentPath2 = "environment/wind/angleApparent";
+                break;
+              case 1:
+                currentPath2 = "environment/wind/angleTrue";
+                break;
+            }
+            switch (positionPriority[4]) {
+              case 0:
+                currentPath3 = "environment/wind/speedApparent";
+                break;
+              case 1:
+                currentPath3 = "environment/wind/speedTrue";
+                break;
+            }
+            break;
+          case 6: // All
+            break;
+        }
+      }
+
+      function getPriorities(answerHTTP) {
+        if (typeof answerHTTP.environment.depth.belowKeel != "undefined")
+          if (
+            typeof answerHTTP.environment.depth.belowKeel.value != "undefined"
+          )
+            // Depth
+            positionPriority[0] = 0;
+        if (
+          positionPriority[0] == -1 &&
+          typeof answerHTTP.environment.depth.belowTransducer != "undefined"
+        )
+          if (
+            positionPriority[0] == -1 &&
+            typeof answerHTTP.environment.depth.belowTransducer.value !=
+              "undefined"
+          )
+            positionPriority[0] = 1;
+        if (
+          positionPriority[0] == -1 &&
+          typeof answerHTTP.environment.depth.belowSurface != "undefined"
+        )
+          if (
+            positionPriority[0] == -1 &&
+            typeof answerHTTP.environment.depth.belowSurface.value !=
+              "undefined"
+          )
+            positionPriority[0] = 2;
+        if (positionPriority[0] == -1) positionPriority[0] = 9;
+
+        if (typeof answerHTTP.navigation.speedThroughWater != "undefined")
+          if (
+            typeof answerHTTP.navigation.speedThroughWater.value != "undefined"
+          )
+            // Speed
+            positionPriority[1] = 0;
+        if (
+          positionPriority[1] == -1 &&
+          typeof answerHTTP.navigation.speedOverGround != "undefined"
+        )
+          if (
+            positionPriority[1] == -1 &&
+            typeof answerHTTP.navigation.speedOverGround.value != "undefined"
+          )
+            positionPriority[1] = 1;
+        if (positionPriority[1] == -1) positionPriority[1] = 9;
+
+        if (typeof answerHTTP.navigation.headingMagnetic != "undefined")
+          if (typeof answerHTTP.navigation.headingMagnetic.value != "undefined")
+            // Course (Heading)
+            positionPriority[2] = 0;
+        if (
+          positionPriority[2] == -1 &&
+          typeof answerHTTP.navigation.headingTrue != "undefined"
+        )
+          if (
+            positionPriority[2] == -1 &&
+            typeof answerHTTP.navigation.headingTrue.value != "undefined"
+          )
+            positionPriority[2] = 1;
+        if (
+          positionPriority[2] == -1 &&
+          typeof answerHTTP.navigation.courseOverGround != "undefined"
+        )
+          if (
+            positionPriority[2] == -1 &&
+            typeof answerHTTP.navigation.courseOverGround.value != "undefined"
+          )
+            positionPriority[2] = 2;
+        if (positionPriority[2] == -1) positionPriority[2] = 9;
+
+        if (typeof answerHTTP.environment.wind.angleApparent != "undefined")
+          if (
+            typeof answerHTTP.environment.wind.angleApparent.value !=
+            "undefined"
+          )
+            // Wind
+            // Wind
+            positionPriority[3] = 0;
+        if (
+          positionPriority[3] == -1 &&
+          typeof answerHTTP.environment.wind.angleTrue != "undefined"
+        )
+          if (
+            positionPriority[3] == -1 &&
+            typeof answerHTTP.environment.wind.angleTrue.value != "undefined"
+          )
+            positionPriority[3] = 1;
+        if (positionPriority[3] == -1) positionPriority[3] = 9;
+        if (typeof answerHTTP.environment.wind.speedApparent != "undefined")
+          if (
+            typeof answerHTTP.environment.wind.speedApparent.value !=
+            "undefined"
+          )
+            // Wind
+            positionPriority[4] = 0;
+        if (
+          positionPriority[4] == -1 &&
+          typeof answerHTTP.environment.wind.speedTrue != "undefined"
+        )
+          if (
+            positionPriority[4] == -1 &&
+            typeof answerHTTP.environment.wind.speedTrue.value != "undefined"
+          )
+            positionPriority[4] = 1;
+        if (positionPriority[4] == -1) positionPriority[4] = 9;
+      }
+
+      function displayValue(value, value2, value3, value4, value5) {
+        var offset = 0;
+        switch (currentBoxes) {
+          case 0:
+          case 1:
+          case 2:
+            if (depthUnitsMode == 1 && currentBoxes == 0) offset = 2;
+            document.getElementById("display11").innerHTML =
+              "<Font Style='Font-Size:600%;'><B>" +
+              LABEL_VARIABLES[currentBoxes][positionPriority[currentBoxes]] +
+              "</B><BR><BR></Font>" +
+              "<span Style='Font-Size:1750%;'><B>" +
+              value +
+              "</span></B><BR><BR><BR><BR><BR><BR>" +
+              "<Font Style='Font-Size:600%;'><B>" +
+              LABEL_UNITS[currentBoxes][
+                positionPriority[currentBoxes] + offset
+              ] +
+              "</B></Font>";
+            break;
+          case 3:
+            if (speedUnitsMode == 1) offset = 2;
+            document.getElementById("display11").innerHTML =
+              "<Font Style='Font-Size:600%;'><B>" +
+              LABEL_VARIABLES[currentBoxes][positionPriority[currentBoxes]] +
+              "</B></Font><BR><BR><BR><BR>" +
+              "<span Style='Font-Size:1500%; Display:Block; Line-Height:0.9;'><B>" +
+              value +
+              "<BR>" +
+              value2 +
+              "</span Style='line-height: 1;'></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:600%;'><B>" +
+              LABEL_UNITS[currentBoxes][
+                positionPriority[currentBoxes] + offset
+              ] +
+              "</B><BR></Font>";
+            break;
+          case 4:
+            if (depthUnitsMode == 1) offset = 2;
+            document.getElementById("display11").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[0][positionPriority[0]] +
+              "</B></Font><BR><BR><BR>" +
+              "<span Style='Font-Size:1000%;'><B>" +
+              value +
+              "</span></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[0][positionPriority[0] + offset] +
+              "</B></Font>";
+            document.getElementById("display21").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[1][positionPriority[1]] +
+              "</B></Font><BR><BR><BR>" +
+              "<span Style='Font-Size:1000%;'><B>" +
+              value2 +
+              "</span></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[1][positionPriority[1]] +
+              "</B></Font>";
+            break;
+          case 5:
+            document.getElementById("display11").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[2][positionPriority[2]] +
+              "</B></Font><BR><BR><BR>" +
+              "<span Style='Font-Size:1000%;'><B>" +
+              value +
+              "</span></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[2][positionPriority[2] + offset] +
+              "</B></Font>";
+            if (speedUnitsMode == 1) offset = 2;
+            document.getElementById("display21").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[3][positionPriority[3]] +
+              "</B></Font><BR><BR>" +
+              "<span Style='Font-Size:900%; Display:Block; Line-Height:0.9;'><B>" +
+              value2 +
+              "<BR>" +
+              value3 +
+              "</span></B><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[3][positionPriority[3] + offset] +
+              "</B></Font>";
+            break;
+          case 6:
+            if (depthUnitsMode == 1) offset = 2;
+            document.getElementById("display11").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[0][positionPriority[0]] +
+              "</B></Font><BR><BR><BR>" +
+              "<span Style='Font-Size:900%;'><B>" +
+              value +
+              "</span></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[0][positionPriority[0] + offset] +
+              "</B></Font>";
+            document.getElementById("display12").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[1][positionPriority[1]] +
+              "</B></Font><BR><BR><BR>" +
+              "<span Style='Font-Size:900%;'><B>" +
+              value2 +
+              "</span></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[1][positionPriority[1]] +
+              "</B></Font>";
+            document.getElementById("display21").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[2][positionPriority[2]] +
+              "</B></Font><BR><BR><BR>" +
+              "<span Style='Font-Size:900%;'><B>" +
+              value3 +
+              "</span></B><BR><BR><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[2][positionPriority[2] + offset] +
+              "</B></Font>";
+            offset = 0;
+            if (speedUnitsMode == 1) offset = 2;
+            document.getElementById("display22").innerHTML =
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_VARIABLES[3][positionPriority[3]] +
+              "</B></Font><BR><BR>" +
+              "<span Style='Font-Size:800%; Display:Block; Line-Height:0.9;'><B>" +
+              value4 +
+              "<BR>" +
+              value5 +
+              "</span></B><BR>" +
+              "<Font Style='Font-Size:300%;'><B>" +
+              LABEL_UNITS[3][positionPriority[3] + offset] +
+              "</B></Font>";
+            break;
+        }
+      }
+
+      // This function is executed when the user press the button "Close/Open the stream", activating or deactivating
+      // the flag "flagStreamClosed". This flag is checked in the function "getVariablesAvailable". If false, the program
+      // request data from the server. If it is true, doesnt ask for data
+      function openCloseStream() {
+        if (
+          document.getElementById("buttonOpenCloseStream").innerHTML.trim() ==
+          "Close Stream"
+        ) {
+          document.getElementById("buttonOpenCloseStream").innerHTML =
+            "Open Stream";
+          flagStreamClosed = true;
+        } else {
+          document.getElementById("buttonOpenCloseStream").innerHTML =
+            "Close Stream";
+          flagStreamClosed = false;
+        }
+        return false;
+      }
+
+      document.onclick = function(event) {
+        if (event.offsetX > document.body.offsetWidth / 2) {
+          switch (currentBoxes) {
+            case 0:
+            case 1:
+            case 2:
+              currentBoxes++;
+              break;
+            case 3:
+              break;
+            case 4: // 12
+              currentBoxes++;
+              break;
+            case 5: // 34
+              break;
+            case 6: // 1234
+              break;
+          }
+        } else {
+          switch (currentBoxes) {
+            case 0:
+              break;
+            case 1:
+            case 2:
+            case 3:
+              currentBoxes--;
+              break;
+            case 4:
+              break;
+            case 5:
+              currentBoxes--;
+              break;
+            case 6:
+              break;
+          }
+        }
+        getPath(1, null);
+      };
+
+      // This function save, in the local space area, the value of the IP the user wrote in the field "IP" of the
+      // WEB page, so he/she doesnt need to write again it every time the page is accessed
+      function saveNewIP(event) {
+        // The new IP is saved when the user press Enter (code key 13)
+        if (event.keyCode === 13) {
+          if ($("#ipServerInput").val().length != 0)
+            localStorage.setItem("ipServer", $("#ipServerInput").val());
+          else localStorage.removeItem("ipServer");
+        }
+
+        return false;
+      }
+
+      // This function save, in the local space area, the value of the IP the user wrote in the field "IP" of the
+      // WEB page, so he/she doesnt need to write again it every time the page is accessed
+      function getSettings() {
+        if (localStorage.getItem("speedUnitsModeSetting"))
+          speedUnitsMode = localStorage.getItem("speedUnitsModeSetting");
+        if (localStorage.getItem("depthUnitsModeSetting"))
+          depthUnitsMode = localStorage.getItem("depthUnitsModeSetting");
+        if (localStorage.getItem("displayModeSetting"))
+          displayMode = localStorage.getItem("displayModeSetting");
+        if (localStorage.getItem("nightViewMode")) {
+          if (localStorage.getItem("nightViewMode") == 1) {
+            document.body.classList.add("bodyNightView");
+            document.getElementById("buttonSettings").style.backgroundImage =
+              "url('OptionsImageWhite.png')";
+          } else {
+            document.body.classList.remove("bodyNightView");
+            document.getElementById("buttonSettings").style.backgroundImage =
+              "url('OptionsImage.png')";
+          }
+        }
+
+        guiDrawed = false;
+      }
+
+      function format3Digits(typeCall, value) {
+        switch (typeCall) {
+          case 1:
+            var valueString = value + "";
+            if (
+              (value > 0 && valueString.length >= 3) ||
+              (value < 0 && valueString.length > 3)
+            )
+              return valueString;
+            if (value >= 0) {
+              while (valueString.length < 3) valueString = "0" + valueString;
+              value = valueString;
+            } else {
+              value = -value;
+              valueString = value + "";
+              while (valueString.length < 3) valueString = "0" + valueString;
+              valueString = "-" + valueString;
+            }
+            return valueString;
+          case 2:
+            if (value > 180) value = value - 360;
+            var valueString = value + "";
+            if (
+              (value > 0 && valueString.length >= 3) ||
+              (value < 0 && valueString.length > 3)
+            ) {
+              if (value >= 100 && value < 180) valueString = value + "-";
+              return valueString;
+            }
+            if (value >= 0 && value < 100) {
+              while (valueString.length < 3) valueString = "0" + valueString;
+              if (value != 0) valueString += "-";
+            } else if (value >= -99 && value <= -1) {
+              value = -value;
+              valueString = value + "";
+              while (valueString.length < 3) valueString = "0" + valueString;
+              valueString = "-" + valueString;
+            }
+            return valueString;
+        }
+      }
+    </script>
+  </head>
+
+  <body
+    class="nightView"
+    onresize='document.getElementsByTagName("body")[0].style[ "font-size" ] = document.body.clientWidth*(12/600) + "px";'
+  >
+    <table
+      id="table"
+      style="Width:100%; Height:100%; Margin-Top:3px; Margin:0px; Padding:0"
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+    >
+      <tr id="row1" Height="93%">
+        <td
+          width="50%"
+          align="Center"
+          valign="Center"
+          style="Border:1px solid;"
+        >
+          <div id="display11"></div>
+        </td>
+        <td
+          id="col12"
+          width="50%"
+          align="Center"
+          valign="Center"
+          style="Border:1px solid; Border-Left-Style:Hidden; Display:None;"
+        >
+          <div id="display12"></div>
+        </td>
+      </tr>
+      <tr id="row2" Height="45%" style="Border:1px solid; Display:None;">
+        <td
+          width="50%"
+          align="Center"
+          valign="Center"
+          style="Border:1px solid; Border-Top-Style:Hidden;"
+        >
+          <div id="display21"></div>
+        </td>
+        <td
+          id="col22"
+          width="50%"
+          align="Center"
+          valign="Center"
+          style="Border:1px solid;  Border-Left-Style:Hidden;
+            Border-Top-Style:Hidden; Display:None;"
+        >
+          <div id="display22"></div>
+        </td>
+      </tr>
+      <tr Height="7%">
+        <td
+          width="100%"
+          align="Center"
+          valign="Center"
+          style="Border:1px solid; Border-Top-Style:Hidden;"
+          colspan="2"
+        >
+          <form>
+            <div>
+              <span id="ipServerInputLabel" Style="Display:None;"
+                ><b>URL or IP Address:</b></span
+              >
+              <input
+                type="Text"
+                id="ipServerInput"
+                size="15%"
+                placeholder="demo.signalk.org"
+                style="Padding-top:3px; Padding-Bottom:3px; Display:None;"
+                onKeyPress="saveNewIP(event)"
+              />
+              <button
+                id="buttonOpenCloseStream"
+                type="Button"
+                style="Color:White; Background-Color:Black; Border-Radius:4px;
+                  Padding-top:3px; Padding-Bottom:3px; Display:None;"
+                onClick="openCloseStream()"
+              >
+                Close Stream
+              </button>
+              <button
+                id="buttonSettings"
+                type="Button"
+                style="Border-Style:none; Background-Color:Transparent;
+                  background-image: url('OptionsImage.png');
+                  background-repeat: no-repeat; background-size:contain; Border-Radius:4px;
+                  Padding-top:3px; Padding-Bottom:3px;"
+                onclick="window.location.href='Settings.html'"
+              >
+                &nbsp&nbsp&nbsp&nbsp
+              </button>
+            </div>
+          </form>
+        </td>
+      </tr>
+    </table>
+
+    <script>
+      ipServer = window.location.host;
+      if (
+        ipServer.length == 0 ||
+        ipServer == "192.168.1.64" ||
+        ipServer == "192.168.30.221" ||
+        ipServer == "192.168.30.219"
+      )
+        document.getElementById("buttonSettings").style.opacity = 0.5;
+      else document.getElementById("buttonSettings").style.opacity = 1;
+      console.log(ipServer);
+      getSettings();
+      startRequestDataServer();
+      //console.log(JSON.stringify(jsonParsed));
+      //console.log(positionPriority[0]+"   "+positionPriority[1]+"   "+positionPriority[2]+"   "+positionPriority[3]);
+    </script>
+  </body>
+</html>

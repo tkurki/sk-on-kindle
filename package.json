@@ -1,0 +1,9 @@
+{
+    "name": "@digitalyacht/sk-on-kindle",
+    "version": "1.0.0",
+    "description": "Dashboard webapp for Kindle",
+    "keywords": [
+        "signalk-webapp"
+    ],
+    "license": "Apache-v2"
+}

@@ -1,0 +1,170 @@
+<!DOCTYPE HTML>
+<HTML>
+<HEAD>
+  <Title>Settings</Title>
+  <Script src="jquery.min.js"></Script>
+  <Link rel="stylesheet" type="text/css" media="all" href="iKommunicate-Kindle.css">
+
+  <Script>
+    // Get settings
+    function getSettings() {
+      if(localStorage.getItem("speedUnitsModeSetting")) {
+        switch(Number(localStorage.getItem("speedUnitsModeSetting"))) {
+          case 0:
+            document.getElementById("knots").checked = true;
+            break;
+          case 1:
+            document.getElementById("mS").checked = true;
+            break;
+        }
+      }
+      else {
+        document.getElementById("knots").checked = true;
+      }
+
+      if(localStorage.getItem("depthUnitsModeSetting")) {
+        switch(Number(localStorage.getItem("depthUnitsModeSetting"))) {
+          case 0:
+            document.getElementById("meters").checked = true;
+            break;
+          case 1:
+            document.getElementById("feet").checked = true;
+            break;
+        }
+      }
+      else {
+        document.getElementById("meters").checked = true;
+      }
+
+      if(localStorage.getItem("displayModeSetting")) {
+        switch(Number(localStorage.getItem("displayModeSetting"))) {
+          case 0:
+            document.getElementById("oneLine").checked = true;
+            break;
+          case 1:
+            document.getElementById("twoLines").checked = true;
+            break;
+          case 2:
+            document.getElementById("fourBoxes").checked = true;
+            break;
+        }
+      }
+      else {
+        document.getElementById("oneLine").checked = true;
+      }
+
+      if(localStorage.getItem("nightViewMode")) {
+        if(localStorage.getItem("nightViewMode")==1) {
+          document.body.classList.add("bodyNightView");
+          document.getElementById("nightView").checked = true;
+        }
+      }
+    }
+
+    // Change display mode (1 line, 2 lines, 4 boxes)
+    function changeSettingMode(event,setting) {
+      switch(setting) {
+        case 1:
+          var speedUnitsMode = document.getElementsByName('speedUnitsMode');
+          // Loop in the list to find the radio button selected
+          for(var i = 0; i < speedUnitsMode.length; i++){
+            if(speedUnitsMode[i].checked)
+              break;
+          }
+          localStorage.setItem('speedUnitsModeSetting',i);
+            break;
+          break;
+        case 2:
+          var depthUnitsMode = document.getElementsByName('depthUnitsMode');
+          // Loop in the list to find the radio button selected
+          for(var i = 0; i < depthUnitsMode.length; i++){
+            if(depthUnitsMode[i].checked)
+              break;
+          }
+          localStorage.setItem('depthUnitsModeSetting',i);
+            break;
+          break;
+        case 3:
+          var displayMode = document.getElementsByName('displayMode');
+          // Loop in the list to find the radio button selected
+          for(var i = 0; i < displayMode.length; i++){
+            if(displayMode[i].checked)
+              break;
+          }
+          localStorage.setItem('displayModeSetting',i);
+          break;
+        case 4:
+          var nightViewMode = document.getElementById('nightView');
+          if(!nightViewMode.checked) {
+            document.body.classList.remove("bodyNightView");
+            localStorage.setItem('nightViewMode',0);
+          }
+          else {
+            document.body.classList.add("bodyNightView");
+            localStorage.setItem('nightViewMode',1);
+          }
+          break;
+      }
+    }
+  </Script>
+</HEAD>
+
+<BODY>
+  <Table id="table" Style="Width:100%; Height:100%; Margin-Top:3px; Margin:0px; Padding:0" Border="0" CellPadding="0"
+        CellSpacing="0">
+    <TR Id="row1" Height=93%>
+      <TD Width=100% VAlign="Top" Style="Border:1px solid;">
+        <P Style="Margin:0; Padding-Left:20px; Font-Size:300%;"><B>Units</B></P>
+        <P Style="Margin:0; Padding-Left:20px; Font-Size:200%;"><B>Wind Speed</B></P>
+        <Div Style="Padding-Left:20px; Font-Size:200%;">
+              <Input type="radio" name="speedUnitsMode" id="knots" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,1)" checked>
+              <label for="knots"><B>Knots</B></Div>
+        <Div Style="Padding-Left:20px; Margin-Top:5px; Font-Size:200%;">
+              <Input type="radio" name="speedUnitsMode" id="mS" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,1)">
+              <label for="mS"><B>m/s</B></Div>
+
+        <P Style="Margin:0; Padding-Top:15px; Padding-Left:20px; Font-Size:200%;"><B>Depth</B></P>
+        <Div Style="Padding-Left:20px; Font-Size:200%;">
+              <Input type="radio" name="depthUnitsMode" id="meters" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,2)" checked>
+              <label for="knots"><B>Meters</B></Div>
+        <Div Style="Padding-Left:20px; Margin-Top:5px; Font-Size:200%;">
+              <Input type="radio" name="depthUnitsMode" id="feet" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,2)">
+              <label for="mS"><B>Feet</B></Div>
+
+        <P Style="Margin:0; Padding-Top:20px; Padding-Left:20px; Font-Size:300%;"><B>Display</B></P>
+        <Div Style="Padding-Left:20px; Font-Size:200%;">
+              <Input type="radio" name="displayMode" id="oneLine" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,3)" checked>
+              <label for="oneLine"><B>1 Line</B></Div>
+        <Div Style="Padding-Left:20px; Margin-Top:5px; Font-Size:200%;">
+              <Input type="radio" name="displayMode" id="twoLines" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,3)">
+              <label for="twoLines"><B>2 Lines</B></Div>
+        <Div Style="Padding-Left:20px; Margin-Top:5px; Font-Size:200%;">
+              <Input type="radio" name="displayMode" id="fourBoxes" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,3)">
+              <label for="fourBoxes"><B>4 Boxes</B></Div>
+        <P Style="Margin:0; Padding-Top:20px; Padding-Left:20px; Font-Size:300%;"><B>View</B></P>
+        <Div Style="Padding-Left:20px; Font-Size:200%;">
+              <Input type="checkbox" id="nightView" Style="Width:20px; Height:20px;"
+              onClick="changeSettingMode(event,4)">
+              <label for="oneLine"><B>Night View</B></Div>
+      </TD>
+    </TR>
+    <TR Id="row2" Height=7%>
+      <TD Width=100% Align="Center" VAlign="Center" Style="Border:1px solid; Border-Top-Style:Hidden;" ColSpan=2>
+        <Button id="back" Type="Button" Style="Width:20%; Color:White; Background-Color:Black; Border-Radius:4px;
+              Padding-top:3px; Padding-Bottom:3px;" onClick="window.location.href='index.html'">
+              CLOSE</Button>
+      </TD>
+    </TR>
+  </Table>
+  <Script>
+    getSettings();
+  </Script>
+</BODY>
+</HTML>
